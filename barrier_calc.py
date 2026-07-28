@@ -5,7 +5,6 @@ from dataclasses import dataclass
 class barrier_inputs:
     """Class for keeping track of inputs."""
     water_depth: float
-    kentledge_mass: float
     mu_membrane_ground: float
     mu_barrier_ground: float
     mu_kentledge_ground: float
@@ -23,13 +22,13 @@ class barrier_inputs:
 @dataclass
 class barrier_outputs:
     """Class for keeping track of outputs."""
-    slope_horiz_force: float
-    vert_wall_horiz_force: float
-    total_driving_force: float
-    resisting_force: float
+    slope_horiz_force_kN: float
+    vert_wall_horiz_force_kN: float
+    total_driving_force_kN: float
+    resisting_force_kN: float
     actual_fos: float
     passes: bool
-    required_kentledge_mass: float
+    required_kentledge_mass_kg: float
 
 
 
@@ -80,7 +79,6 @@ def sliding_check(inputs: barrier_inputs) -> barrier_outputs:
     )
 
     barrier_weight = inputs.barrier_mass * inputs.gravity
-    kentledge_weight = inputs.kentledge_mass * inputs.gravity
 
     membrane_resistance = (
         inputs.mu_membrane_ground
@@ -89,18 +87,12 @@ def sliding_check(inputs: barrier_inputs) -> barrier_outputs:
 
     barrier_resistance = (
         inputs.mu_barrier_ground
-        * barrier_weight
-    )
-
-    kentledge_resistance = (
-        inputs.mu_kentledge_ground
-        * kentledge_weight
+        * (barrier_weight + slope_vertical_force)
     )
 
     total_resisting_force = (
         membrane_resistance
         + barrier_resistance
-        + kentledge_resistance
     )
 
     if driving_force > 0:
