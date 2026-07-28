@@ -1,3 +1,11 @@
 .venv/
+.venv_old/
+.venv_outdated/
 __pycache__/
 *.pyc
+*.pyo
+build/
+dist/
+*.spec
+.DS_Store
+Thumbs.db
