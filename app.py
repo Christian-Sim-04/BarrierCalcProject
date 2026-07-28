@@ -1,7 +1,9 @@
 import sys
+import numpy as np
 
 from PySide6.QtWidgets import (
     QApplication,
+    QComboBox,
     QDoubleSpinBox,
     QFormLayout,
     QGridLayout,
@@ -65,6 +67,21 @@ class BarrierCalculatorWindow(QMainWindow):
         field.setSingleStep(0.1)
         return field
 
+    def update_input_field_visibility(self) -> None:
+        """Updates the visibility of input fields based on the selected calculation mode."""
+        
+        if self.mode_input.currentText() == "Single depth":
+            self.water_depth_input.show()
+            self.start_depth_input.hide()
+            self.end_depth_input.hide()
+            self.visibility_toggle = 0
+
+        elif self.mode_input.currentText() == "Sweep through depths":
+            self.water_depth_input.hide()
+            self.start_depth_input.show()
+            self.end_depth_input.show()
+            self.visibility_toggle = 1
+
     def create_input_panel(self) -> QGroupBox:
         """Creates the input panel for the application.
 
@@ -102,7 +119,32 @@ class BarrierCalculatorWindow(QMainWindow):
             decimals=3,
         )
 
+        self.mode_input = QComboBox()
+        self.mode_input.addItems(["Single depth", "Sweep through depths"])
+        self.mode_input.currentIndexChanged.connect(self.update_input_field_visibility)
+
+        self.start_depth_input = self.create_number_input(
+            minimum=0.0,
+            maximum=2.0,
+            value=0.6,
+            decimals=1,
+        )
+
+        self.end_depth_input = self.create_number_input(
+            minimum=0.0,
+            maximum=1.0,
+            value=1.0,
+            decimals=1,
+        )
+
+        self.update_input_field_visibility()  # Set initial visibility based on default mode
+
+        layout.addRow("Calculation Mode:", self.mode_input)
+
         layout.addRow("Water Depth (m):", self.water_depth_input)
+        layout.addRow("Start Depth (m):", self.start_depth_input)
+        layout.addRow("End Depth (m):", self.end_depth_input)
+
         layout.addRow("Membrane Friction Coefficient:", self.mu_membrane_input)
         layout.addRow("Barrier Friction Coefficient:", self.mu_barrier_input)
         layout.addRow("Kentledge Friction Coefficient:", self.mu_kentledge_input)
@@ -143,12 +185,14 @@ class BarrierCalculatorWindow(QMainWindow):
         self.fos_label = QLabel("Sliding Factor of Safety: -")
         self.status_label = QLabel("Status: -")
         self.required_kentledge_label = QLabel("Required Kentledge Mass (kg): -")
+        self.sweep_results_label = QLabel("Depth Range: n/a")
 
         layout.addWidget(self.driving_force_label)
         layout.addWidget(self.resisting_force_label)
         layout.addWidget(self.fos_label)
         layout.addWidget(self.status_label)
         layout.addWidget(self.required_kentledge_label)
+        layout.addWidget(self.sweep_results_label)
         layout.addStretch()
 
         return group
@@ -157,28 +201,73 @@ class BarrierCalculatorWindow(QMainWindow):
 
     def calculate(self) -> None:
         """Calculates the sliding check based on user inputs."""
-        inputs = barrier_inputs(
-            water_depth=self.water_depth_input.value(),
-            mu_membrane_ground=self.mu_membrane_input.value(),
-            mu_barrier_ground=self.mu_barrier_input.value(),
-            mu_kentledge_ground=self.mu_kentledge_input.value(),
-        )
 
-        outputs = sliding_check(inputs)
+        mode = self.mode_input.currentText()
 
-        self.driving_force_label.setText(f"Driving Force (kN): {outputs.total_driving_force_kN:.3f}")
-        self.resisting_force_label.setText(f"Total Resistance (kN): {outputs.resisting_force_kN:.3f}")
-        self.fos_label.setText(f"Sliding Factor of Safety: {outputs.actual_fos:.3f}")
-        if outputs.passes:
-            self.status_label.setText("Status: PASS")
-            self.status_label.setStyleSheet("color: green; font-weight: bold;")
+        if mode == "Single depth":
+            depths = [self.water_depth_input.value()]
+        else:
+            start_depth = self.start_depth_input.value()
+            end_depth = self.end_depth_input.value()
+            
+            if start_depth >= end_depth:
+                self.status_label.setText("Error: Start depth must be less than end depth.")
+                self.status_label.setStyleSheet("color: red; font-weight: bold;")
+
+                self.driving_force_label.setText("Driving Force (kN): -")
+                self.resisting_force_label.setText("Total Resistance (kN): -")
+                self.fos_label.setText("Sliding Factor of Safety: -")
+                self.status_label.setText("Status: Invalid range")
+                self.status_label.setStyleSheet("color: orange; font-weight: bold;")
+                self.required_kentledge_label.setText("Required Kentledge Mass (kg): -")
+                self.sweep_results_label.setText("Depth Range: n/a")
+                return
+
+            depths = []
+            current_depth = start_depth
+            while current_depth <= end_depth:
+                depths.append(current_depth)
+                current_depth += 0.1
+
+        results = []
+        for depth in depths:
+            inputs = barrier_inputs(
+                water_depth=depth,
+                mu_membrane_ground=self.mu_membrane_input.value(),
+                mu_barrier_ground=self.mu_barrier_input.value(),
+                mu_kentledge_ground=self.mu_kentledge_input.value(),
+            )
+
+            outputs = sliding_check(inputs)
+            results.append((depth, outputs))
+
+        if mode == "Single depth":
+            depth, outputs = results[0]
+            self.driving_force_label.setText(f"Driving Force (kN): {outputs.total_driving_force_kN:.3f}")
+            self.resisting_force_label.setText(f"Total Resistance (kN): {outputs.resisting_force_kN:.3f}")
+            self.fos_label.setText(f"Sliding Factor of Safety: {outputs.actual_fos:.3f}")
+
+            if outputs.passes:
+                self.status_label.setText("Status: PASS")
+                self.status_label.setStyleSheet("color: green; font-weight: bold;")
+            else:
+                self.status_label.setText("Status: FAIL")
+                self.status_label.setStyleSheet("color: red; font-weight: bold;")
+            self.required_kentledge_label.setText(f"Required Kentledge Mass (kg): {outputs.required_kentledge_mass_kg:.0f}")
+            self.sweep_results_label.setText("Depth Range: n/a")
 
         else:
-            self.status_label.setText("Status: FAIL")
-            self.status_label.setStyleSheet("color: red; font-weight: bold;")
-        self.required_kentledge_label.setText(f"Required Kentledge Mass (kg): {outputs.required_kentledge_mass_kg:.0f}")
+            rows = []
+            for depth, outputs in results:
+                status = "PASS" if outputs.passes else "FAIL"
+                rows.append(f"Depth: {depth:.2f} m | FoS: {outputs.actual_fos:.3f} | Status: {status}")
 
-        return
+            self.driving_force_label.setText("Driving Force (kN): -")
+            self.resisting_force_label.setText("Total Resistance (kN): -")
+            self.fos_label.setText("Sliding Factor of Safety: -")
+            self.status_label.setText("Status: -")
+            self.required_kentledge_label.setText("Required Kentledge Mass (kg): -")
+            self.sweep_results_label.setText("\n".join(rows))
 
 
 def main() -> None:
